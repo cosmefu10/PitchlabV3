@@ -1,0 +1,1065 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<title>PitchScope</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Inter:wght@300;400;500;600&display=swap');
+
+  :root {
+    --bg:        #0a0d12;
+    --panel:     #111620;
+    --border:    #1e2a38;
+    --cyan:      #00e5ff;
+    --green:     #39ff14;
+    --amber:     #ffb300;
+    --pink:      #ff4081;
+    --white:     #e8edf2;
+    --muted:     #4a5568;
+    --tab-h:     48px;
+    --ctrl-h:    56px;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: var(--bg);
+    color: var(--white);
+    font-family: 'Inter', sans-serif;
+    height: 100dvh;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  /* ── HEADER ── */
+  header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 16px;
+    height: 44px;
+    border-bottom: 1px solid var(--border);
+    flex-shrink: 0;
+  }
+  .logo {
+    font-family: 'Space Mono', monospace;
+    font-size: 15px;
+    letter-spacing: .12em;
+    color: var(--cyan);
+  }
+  .logo span { color: var(--white); opacity: .5; }
+  #status {
+    font-family: 'Space Mono', monospace;
+    font-size: 11px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  #dot {
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    background: var(--muted);
+    transition: background .3s;
+  }
+  #dot.active { background: var(--green); box-shadow: 0 0 6px var(--green); }
+  #dot.error  { background: var(--pink); }
+
+  /* ── TABS ── */
+  .tabs {
+    display: flex;
+    border-bottom: 1px solid var(--border);
+    flex-shrink: 0;
+    height: var(--tab-h);
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+  .tabs::-webkit-scrollbar { display: none; }
+  .tab {
+    flex: 1;
+    min-width: 72px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 11px;
+    font-weight: 500;
+    letter-spacing: .06em;
+    text-transform: uppercase;
+    color: var(--muted);
+    cursor: pointer;
+    border-bottom: 2px solid transparent;
+    transition: color .2s, border-color .2s;
+    user-select: none;
+    white-space: nowrap;
+    padding: 0 8px;
+  }
+  .tab.active      { color: var(--cyan); border-bottom-color: var(--cyan); }
+  .tab[data-tab="piano"]    .tab-dot { background: var(--green); }
+  .tab[data-tab="slide"]    .tab-dot { background: var(--amber); }
+  .tab[data-tab="combo"]    .tab-dot { background: var(--pink); }
+  .tab[data-tab="f0"]       .tab-dot { background: var(--cyan); }
+  .tab-dot {
+    width: 6px; height: 6px; border-radius: 50%;
+    margin-right: 5px; background: var(--muted);
+    transition: background .2s;
+  }
+  .tab.active[data-tab="f0"]    .tab-dot { background: var(--cyan); }
+  .tab.active[data-tab="piano"] .tab-dot { background: var(--green); }
+  .tab.active[data-tab="slide"] .tab-dot { background: var(--amber); }
+  .tab.active[data-tab="combo"] .tab-dot { background: var(--pink); }
+
+  /* ── CANVAS AREA ── */
+  .canvas-wrap {
+    flex: 1;
+    position: relative;
+    overflow: hidden;
+  }
+  canvas.graph {
+    position: absolute;
+    top: 0; left: 0;
+    width: 100%; height: 100%;
+    display: none;
+  }
+  canvas.graph.active { display: block; }
+
+  /* ── CONTROLS ── */
+  .controls {
+    height: var(--ctrl-h);
+    border-top: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 0 14px;
+    flex-shrink: 0;
+    background: var(--panel);
+  }
+
+  #btn-mic {
+    width: 38px; height: 38px; flex-shrink: 0;
+    border-radius: 50%;
+    border: 2px solid var(--cyan);
+    background: transparent;
+    color: var(--cyan);
+    font-size: 16px;
+    cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+    transition: background .2s, box-shadow .2s;
+  }
+  #btn-mic.recording {
+    background: rgba(0,229,255,.12);
+    box-shadow: 0 0 12px rgba(0,229,255,.4);
+  }
+  #btn-mic.recording svg { animation: pulse 1.2s ease-in-out infinite; }
+  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.4} }
+
+  .ctrl-group {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    flex: 1;
+  }
+  .ctrl-label {
+    font-family: 'Space Mono', monospace;
+    font-size: 9px;
+    color: var(--muted);
+    letter-spacing: .08em;
+    text-transform: uppercase;
+  }
+  .ctrl-row { display: flex; align-items: center; gap: 8px; }
+  .ctrl-val {
+    font-family: 'Space Mono', monospace;
+    font-size: 11px;
+    color: var(--cyan);
+    min-width: 28px;
+    text-align: right;
+  }
+
+  input[type=range] {
+    -webkit-appearance: none;
+    flex: 1;
+    height: 3px;
+    border-radius: 2px;
+    background: var(--border);
+    outline: none;
+  }
+  input[type=range]::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    width: 14px; height: 14px;
+    border-radius: 50%;
+    background: var(--cyan);
+    cursor: pointer;
+    box-shadow: 0 0 4px var(--cyan);
+  }
+
+  /* pitch readout */
+  #pitch-display {
+    text-align: right;
+    flex-shrink: 0;
+  }
+  #pitch-hz {
+    font-family: 'Space Mono', monospace;
+    font-size: 15px;
+    color: var(--cyan);
+    line-height: 1;
+  }
+  #pitch-note {
+    font-family: 'Space Mono', monospace;
+    font-size: 10px;
+    color: var(--white);
+    opacity: .6;
+    margin-top: 2px;
+  }
+
+  /* ── OVERLAY LABELS ── */
+  .graph-label {
+    position: absolute;
+    top: 8px; left: 48px;
+    font-family: 'Space Mono', monospace;
+    font-size: 9px;
+    letter-spacing: .1em;
+    text-transform: uppercase;
+    opacity: .4;
+    pointer-events: none;
+  }
+
+  /* ── INFO TOAST ── */
+  #toast {
+    position: fixed;
+    bottom: 70px; left: 50%; transform: translateX(-50%);
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 8px 16px;
+    font-size: 12px;
+    color: var(--muted);
+    opacity: 0;
+    transition: opacity .4s;
+    pointer-events: none;
+    white-space: nowrap;
+    z-index: 10;
+  }
+  #toast.show { opacity: 1; }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="logo">PITCH<span>SCOPE</span></div>
+  <div id="status">
+    <div id="dot"></div>
+    <span id="status-text">LISTO</span>
+  </div>
+</header>
+
+<div class="tabs">
+  <div class="tab active" data-tab="f0"><span class="tab-dot"></span>F0 Praat</div>
+  <div class="tab" data-tab="piano"><span class="tab-dot"></span>Piano Roll</div>
+  <div class="tab" data-tab="slide"><span class="tab-dot"></span>Deslizante</div>
+  <div class="tab" data-tab="combo"><span class="tab-dot"></span>Combinado</div>
+</div>
+
+<div class="canvas-wrap">
+  <canvas id="c-f0"    class="graph active"></canvas>
+  <canvas id="c-piano" class="graph"></canvas>
+  <canvas id="c-slide" class="graph"></canvas>
+  <canvas id="c-combo" class="graph"></canvas>
+</div>
+
+<div class="controls">
+  <button id="btn-mic" title="Iniciar/detener micrófono">
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/>
+      <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
+      <line x1="12" y1="19" x2="12" y2="23"/>
+      <line x1="8"  y1="23" x2="16" y2="23"/>
+    </svg>
+  </button>
+
+  <div class="ctrl-group">
+    <div class="ctrl-label">Ventana X</div>
+    <div class="ctrl-row">
+      <input type="range" id="range-window" min="1" max="10" step="0.5" value="5">
+      <div class="ctrl-val"><span id="val-window">5</span>s</div>
+    </div>
+  </div>
+
+  <div id="pitch-display">
+    <div id="pitch-hz">--- Hz</div>
+    <div id="pitch-note">---</div>
+  </div>
+</div>
+
+<div id="toast">Toca el micrófono para comenzar</div>
+
+<script>
+// ─────────────────────────────────────────────
+//  CONFIG
+// ─────────────────────────────────────────────
+const NOTE_NAMES = ['C','C#','D','D#','E','F','F#','G','G#','A','A#','B'];
+const MIN_HZ = 60, MAX_HZ = 1000;
+const MIN_NOTE = hzToMidi(MIN_HZ), MAX_NOTE = hzToMidi(MAX_HZ);
+const COLORS = { f0: '#00e5ff', piano: '#39ff14', slide: '#ffb300', ref: '#ff4081' };
+const BG     = '#0a0d12', PANEL = '#111620', BORDER = '#1e2a38', MUTED = '#2a3748';
+
+let windowSec = 5;          // visible X span in seconds
+let history   = [];         // [{t, hz}]  raw pitch history (last 30 s max)
+let running   = false;
+let audioCtx, analyser, sourceNode, buf, animId;
+let startTime = 0;
+
+// ─────────────────────────────────────────────
+//  CANVAS SETUP — hi-DPI
+// ─────────────────────────────────────────────
+const canvases = {
+  f0:    document.getElementById('c-f0'),
+  piano: document.getElementById('c-piano'),
+  slide: document.getElementById('c-slide'),
+  combo: document.getElementById('c-combo'),
+};
+let activeTab = 'f0';
+
+function resizeAll() {
+  for (const c of Object.values(canvases)) {
+    const r = window.devicePixelRatio || 1;
+    c.width  = c.offsetWidth  * r;
+    c.height = c.offsetHeight * r;
+  }
+}
+window.addEventListener('resize', resizeAll);
+resizeAll();
+
+// ─────────────────────────────────────────────
+//  UTILS
+// ─────────────────────────────────────────────
+function hzToMidi(hz) { return 69 + 12 * Math.log2(hz / 440); }
+function midiToNote(m) {
+  const oct = Math.floor(m / 12) - 1;
+  return NOTE_NAMES[Math.round(m) % 12] + oct;
+}
+function hzToNote(hz) { return midiToNote(hzToMidi(hz)); }
+
+function clamp(v,a,b){ return Math.max(a, Math.min(b, v)); }
+
+function noteColor(midi) {
+  // chromatic hue wheel
+  const n = Math.round(midi) % 12;
+  const hues = [0,30,60,90,120,150,180,210,240,270,300,330];
+  return `hsl(${hues[n]},80%,60%)`;
+}
+
+// ─────────────────────────────────────────────
+//  YIN PITCH DETECTION (fast, web-friendly)
+// ─────────────────────────────────────────────
+function detectPitch(buf, sampleRate) {
+  const W = buf.length;
+  const half = W >> 1;
+  const threshold = 0.15;
+  let d = 0;
+
+  const diff = new Float32Array(half);
+  diff[0] = 0;
+  let runSum = 0;
+
+  for (let tau = 1; tau < half; tau++) {
+    let s = 0;
+    for (let i = 0; i < half; i++) {
+      const delta = buf[i] - buf[i + tau];
+      s += delta * delta;
+    }
+    diff[tau] = s;
+    runSum += diff[tau];
+    diff[tau] *= tau / runSum;
+
+    if (tau > 2 && diff[tau] < threshold) {
+      while (tau + 1 < half && diff[tau + 1] < diff[tau]) tau++;
+      // parabolic interpolation
+      const x0 = tau > 0   ? diff[tau-1] : diff[tau];
+      const x2 = tau+1 < half ? diff[tau+1] : diff[tau];
+      const better = tau + (x2 - x0) / (2 * (2 * diff[tau] - x2 - x0) + 1e-9);
+      return sampleRate / better;
+    }
+  }
+  return null;
+}
+
+// ─────────────────────────────────────────────
+//  AUDIO
+// ─────────────────────────────────────────────
+async function startMic() {
+  try {
+    audioCtx   = new (window.AudioContext || window.webkitAudioContext)();
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    sourceNode = audioCtx.createMediaStreamSource(stream);
+    analyser   = audioCtx.createAnalyser();
+    analyser.fftSize = 2048;
+    buf = new Float32Array(analyser.fftSize);
+    sourceNode.connect(analyser);
+
+    running   = true;
+    startTime = audioCtx.currentTime;
+    history   = [];
+
+    setStatus('active', 'GRABANDO');
+    document.getElementById('btn-mic').classList.add('recording');
+    animId = requestAnimationFrame(loop);
+  } catch(e) {
+    setStatus('error', 'SIN MIC');
+    showToast('Permite el acceso al micrófono');
+  }
+}
+
+function stopMic() {
+  running = false;
+  cancelAnimationFrame(animId);
+  if (sourceNode) sourceNode.disconnect();
+  if (audioCtx)   audioCtx.close();
+  setStatus('', 'LISTO');
+  document.getElementById('btn-mic').classList.remove('recording');
+}
+
+function setStatus(cls, txt) {
+  const dot  = document.getElementById('dot');
+  const span = document.getElementById('status-text');
+  dot.className  = cls;
+  span.textContent = txt;
+}
+
+// ─────────────────────────────────────────────
+//  MAIN LOOP
+// ─────────────────────────────────────────────
+function loop() {
+  if (!running) return;
+  animId = requestAnimationFrame(loop);
+
+  analyser.getFloatTimeDomainData(buf);
+  const hz = detectPitch(buf, audioCtx.sampleRate);
+  const now = audioCtx.currentTime - startTime;
+
+  if (hz && hz >= MIN_HZ && hz <= MAX_HZ) {
+    history.push({ t: now, hz });
+    document.getElementById('pitch-hz').textContent   = hz.toFixed(0) + ' Hz';
+    document.getElementById('pitch-note').textContent = hzToNote(hz);
+  }
+
+  // trim old data (keep 30 s)
+  const cutoff = now - 30;
+  while (history.length && history[0].t < cutoff) history.shift();
+
+  drawActive(now);
+}
+
+function drawActive(now) {
+  switch (activeTab) {
+    case 'f0':    drawF0(canvases.f0,    now); break;
+    case 'piano': drawPiano(canvases.piano, now); break;
+    case 'slide': drawSlide(canvases.slide, now); break;
+    case 'combo': drawCombo(canvases.combo, now); break;
+  }
+}
+
+// ─────────────────────────────────────────────
+//  SHARED HELPERS
+// ─────────────────────────────────────────────
+function getCtx(canvas) {
+  const ctx = canvas.getContext('2d');
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.scale(window.devicePixelRatio || 1, window.devicePixelRatio || 1);
+  return ctx;
+}
+const W = () => canvases.f0.offsetWidth;
+const H = () => canvases.f0.offsetHeight;
+
+// Filter history for current window
+function windowedHistory(now) {
+  const tMin = now - windowSec;
+  return history.filter(p => p.t >= tMin);
+}
+
+// Map time → x pixel
+function tx(t, now, w) {
+  return ((t - (now - windowSec)) / windowSec) * w;
+}
+// Map hz → y pixel (linear Hz)
+function hy(hz, h, pad=28) {
+  return h - pad - ((hz - MIN_HZ) / (MAX_HZ - MIN_HZ)) * (h - pad*2);
+}
+// Map midi → y pixel (linear semitone)
+function my(midi, h, pad=28) {
+  return h - pad - ((midi - MIN_NOTE) / (MAX_NOTE - MIN_NOTE)) * (h - pad*2);
+}
+
+// Draw background grid for F0 view (Hz axis)
+function drawF0Grid(ctx, w, h) {
+  ctx.fillStyle = BG;
+  ctx.fillRect(0, 0, w, h);
+
+  // horizontal Hz lines
+  const hzMarks = [100,150,200,300,400,600,800];
+  ctx.strokeStyle = BORDER;
+  ctx.lineWidth = 1;
+  ctx.font = '9px "Space Mono", monospace';
+  ctx.fillStyle = '#3a4a5a';
+  ctx.textAlign = 'right';
+
+  for (const hz of hzMarks) {
+    if (hz < MIN_HZ || hz > MAX_HZ) continue;
+    const y = hy(hz, h);
+    ctx.beginPath(); ctx.moveTo(36, y); ctx.lineTo(w, y); ctx.stroke();
+    ctx.fillText(hz+'Hz', 34, y + 3);
+  }
+
+  // vertical time lines
+  ctx.strokeStyle = BORDER;
+  ctx.textAlign = 'center';
+  ctx.fillStyle = '#3a4a5a';
+  for (let dt = 0; dt <= windowSec; dt += 1) {
+    const x = (dt / windowSec) * w;
+    ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, h - 18); ctx.stroke();
+    ctx.fillText('-' + (windowSec - dt).toFixed(0) + 's', x, h - 4);
+  }
+}
+
+// Draw piano roll background
+function drawPianoGrid(ctx, w, h) {
+  ctx.fillStyle = '#0c1018';
+  ctx.fillRect(0, 0, w, h);
+
+  const noteW = 36;
+  const pad   = 28;
+  const trackH = h - pad * 2;
+
+  // white/black key rows
+  for (let m = Math.floor(MIN_NOTE); m <= Math.ceil(MAX_NOTE); m++) {
+    const isBlack = [1,3,6,8,10].includes(m % 12);
+    const y1 = my(m + 0.5, h, pad);
+    const y2 = my(m - 0.5, h, pad);
+    const rh = Math.abs(y2 - y1);
+
+    ctx.fillStyle = isBlack ? '#0f161e' : '#12181f';
+    ctx.fillRect(noteW, y1, w - noteW, rh);
+
+    // subtle separator
+    ctx.strokeStyle = '#182028';
+    ctx.lineWidth = .5;
+    ctx.beginPath(); ctx.moveTo(noteW, y1); ctx.lineTo(w, y1); ctx.stroke();
+
+    // keyboard strip
+    const kColor = isBlack ? '#222e3a' : '#2a3a4a';
+    ctx.fillStyle = kColor;
+    ctx.fillRect(0, y1, noteW - 1, rh);
+
+    // note label every octave (C notes)
+    if (m % 12 === 0) {
+      ctx.fillStyle = '#5a7a8a';
+      ctx.font = '8px "Space Mono", monospace';
+      ctx.textAlign = 'center';
+      ctx.fillText('C'+(Math.floor(m/12)-1), noteW/2, y1 + rh/2 + 3);
+    }
+  }
+
+  // time lines
+  ctx.strokeStyle = '#1a2530';
+  ctx.lineWidth = 1;
+  ctx.font = '9px "Space Mono", monospace';
+  ctx.fillStyle = '#3a4a5a';
+  ctx.textAlign = 'center';
+  for (let dt = 0; dt <= windowSec; dt += 1) {
+    const x = noteW + ((dt / windowSec) * (w - noteW));
+    ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, h - 18); ctx.stroke();
+    ctx.fillText('-'+(windowSec-dt).toFixed(0)+'s', x, h-4);
+  }
+}
+
+// ─────────────────────────────────────────────
+//  GRAPH 1 — F0 PRAAT STYLE
+// ─────────────────────────────────────────────
+function drawF0(canvas, now) {
+  const ctx = getCtx(canvas);
+  const w = canvas.offsetWidth, h = canvas.offsetHeight;
+
+  drawF0Grid(ctx, w, h);
+
+  const pts = windowedHistory(now);
+  if (!pts.length) return;
+
+  // Glowing trace
+  ctx.shadowColor = COLORS.f0;
+  ctx.shadowBlur  = 8;
+  ctx.strokeStyle = COLORS.f0;
+  ctx.lineWidth   = 2;
+  ctx.beginPath();
+  let started = false;
+
+  for (let i = 0; i < pts.length; i++) {
+    const x = tx(pts[i].t, now, w);
+    const y = hy(pts[i].hz, h);
+    // break line if gap > 100ms
+    const gap = i > 0 && (pts[i].t - pts[i-1].t) > 0.12;
+    if (!started || gap) { ctx.moveTo(x, y); started = true; }
+    else ctx.lineTo(x, y);
+  }
+  ctx.stroke();
+  ctx.shadowBlur = 0;
+
+  // Dots at each sample
+  for (const p of pts) {
+    const x = tx(p.t, now, w), y = hy(p.hz, h);
+    ctx.fillStyle = COLORS.f0;
+    ctx.beginPath(); ctx.arc(x, y, 2, 0, Math.PI*2); ctx.fill();
+  }
+
+  // Current value indicator
+  const last = pts[pts.length-1];
+  if (last) {
+    const x = tx(last.t, now, w), y = hy(last.hz, h);
+    ctx.strokeStyle = COLORS.f0;
+    ctx.lineWidth = 1;
+    ctx.setLineDash([3,4]);
+    ctx.beginPath(); ctx.moveTo(36, y); ctx.lineTo(x, y); ctx.stroke();
+    ctx.setLineDash([]);
+
+    ctx.fillStyle = COLORS.f0;
+    ctx.font = 'bold 10px "Space Mono", monospace';
+    ctx.textAlign = 'left';
+    ctx.fillText(last.hz.toFixed(0)+' Hz', x - 44, y - 7);
+  }
+}
+
+// ─────────────────────────────────────────────
+//  GRAPH 2 — PIANO ROLL
+// ─────────────────────────────────────────────
+function drawPiano(canvas, now) {
+  const ctx = getCtx(canvas);
+  const w = canvas.offsetWidth, h = canvas.offsetHeight;
+  const noteW = 36, pad = 28;
+
+  drawPianoGrid(ctx, w, h);
+
+  const pts = windowedHistory(now);
+  if (!pts.length) return;
+
+  // Draw colored bars
+  for (let i = 0; i < pts.length; i++) {
+    const p  = pts[i];
+    const x  = noteW + tx(p.t, now, w - noteW);
+    const m  = hzToMidi(p.hz);
+    const y1 = my(m + 0.4, h, pad);
+    const y2 = my(m - 0.4, h, pad);
+    const bh = Math.abs(y2 - y1);
+
+    // gap detection — only draw segment if not too far from prev
+    const nextT = i + 1 < pts.length ? pts[i+1].t : p.t + 0.05;
+    const segW  = Math.min((nextT - p.t) / windowSec * (w - noteW), (w-noteW) * 0.05);
+
+    const col = noteColor(m);
+    ctx.fillStyle = col;
+    ctx.globalAlpha = 0.85;
+    ctx.beginPath();
+    ctx.roundRect(x, y1, Math.max(segW, 3), bh, 2);
+    ctx.fill();
+
+    // glow
+    ctx.shadowColor = col;
+    ctx.shadowBlur  = 6;
+    ctx.fill();
+    ctx.shadowBlur  = 0;
+    ctx.globalAlpha = 1;
+  }
+
+  // Playhead
+  const px = noteW + (w - noteW) * (1 - 0.001); // right edge
+  ctx.strokeStyle = '#ffffff30';
+  ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.moveTo(w-1, 0); ctx.lineTo(w-1, h-18); ctx.stroke();
+}
+
+// ─────────────────────────────────────────────
+//  GRAPH 3 — SLIDING CURVE (karaoke style)
+// ─────────────────────────────────────────────
+function drawSlide(canvas, now) {
+  const ctx = getCtx(canvas);
+  const w = canvas.offsetWidth, h = canvas.offsetHeight;
+
+  // Background with subtle gradient
+  const grad = ctx.createLinearGradient(0, 0, 0, h);
+  grad.addColorStop(0,   '#0c111a');
+  grad.addColorStop(1,   '#07090e');
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, 0, w, h);
+
+  // Horizontal pitch zones (low/mid/high)
+  const pad = 28;
+  const zones = [
+    { label: 'AGUDO',  y: pad,            color: '#1a1020' },
+    { label: 'MEDIO',  y: h/2 - pad/4,    color: '#0d1520' },
+    { label: 'GRAVE',  y: h - pad*2,      color: '#0a120e' },
+  ];
+  const zh = (h - pad*2) / 3;
+  for (let i = 0; i < 3; i++) {
+    ctx.fillStyle = zones[i].color;
+    ctx.fillRect(32, pad + i * zh, w - 32, zh);
+    ctx.font = '8px "Space Mono", monospace';
+    ctx.fillStyle = '#2a3a4a';
+    ctx.textAlign = 'right';
+    ctx.fillText(zones[i].label, 30, pad + (i + 0.5) * zh + 3);
+  }
+
+  // Soft horizontal guide lines
+  ctx.strokeStyle = '#182028';
+  ctx.lineWidth = .5;
+  for (let i = 0; i <= 3; i++) {
+    const y = pad + i * zh;
+    ctx.beginPath(); ctx.moveTo(32, y); ctx.lineTo(w, y); ctx.stroke();
+  }
+
+  // Time lines
+  ctx.strokeStyle = '#182028';
+  ctx.lineWidth = 1;
+  ctx.font = '9px "Space Mono", monospace';
+  ctx.fillStyle = '#3a4a5a';
+  ctx.textAlign = 'center';
+  for (let dt = 0; dt <= windowSec; dt += 1) {
+    const x = 32 + ((dt / windowSec) * (w - 32));
+    ctx.beginPath(); ctx.moveTo(x, pad); ctx.lineTo(x, h - 18); ctx.stroke();
+    ctx.fillText('-'+(windowSec-dt).toFixed(0)+'s', x, h-4);
+  }
+
+  const pts = windowedHistory(now);
+  if (!pts.length) return;
+
+  // Filled area under curve
+  const aGrad = ctx.createLinearGradient(0, pad, 0, h - pad);
+  aGrad.addColorStop(0,   'rgba(255,179,0,.35)');
+  aGrad.addColorStop(0.5, 'rgba(255,179,0,.15)');
+  aGrad.addColorStop(1,   'rgba(255,179,0,.02)');
+
+  ctx.beginPath();
+  let prevGap = true;
+  let firstX = 0, lastYArr = [];
+
+  for (let i = 0; i < pts.length; i++) {
+    const x = 32 + tx(pts[i].t, now, w - 32);
+    const y = hy(pts[i].hz, h);
+    const gap = i > 0 && (pts[i].t - pts[i-1].t) > 0.12;
+    if (prevGap || gap) {
+      if (!prevGap && lastYArr.length) {
+        // close previous segment
+        ctx.lineTo(lastYArr[lastYArr.length-1].x, h - pad);
+        ctx.lineTo(firstX, h - pad);
+        ctx.closePath();
+        ctx.fillStyle = aGrad;
+        ctx.fill();
+        ctx.beginPath();
+      }
+      ctx.moveTo(x, y);
+      firstX = x;
+      lastYArr = [];
+    } else {
+      ctx.lineTo(x, y);
+    }
+    lastYArr.push({x, y});
+    prevGap = gap;
+  }
+  if (lastYArr.length > 1) {
+    ctx.lineTo(lastYArr[lastYArr.length-1].x, h - pad);
+    ctx.lineTo(firstX, h - pad);
+    ctx.closePath();
+    ctx.fillStyle = aGrad;
+    ctx.fill();
+  }
+
+  // Main curve — thick + glow
+  ctx.shadowColor = COLORS.slide;
+  ctx.shadowBlur  = 14;
+  ctx.strokeStyle = COLORS.slide;
+  ctx.lineWidth   = 3;
+  ctx.lineJoin    = 'round';
+  ctx.lineCap     = 'round';
+  ctx.beginPath();
+  prevGap = true;
+
+  for (let i = 0; i < pts.length; i++) {
+    const x = 32 + tx(pts[i].t, now, w - 32);
+    const y = hy(pts[i].hz, h);
+    const gap = i > 0 && (pts[i].t - pts[i-1].t) > 0.12;
+    if (prevGap || gap) ctx.moveTo(x, y);
+    else                 ctx.lineTo(x, y);
+    prevGap = gap;
+  }
+  ctx.stroke();
+  ctx.shadowBlur = 0;
+
+  // Bright dot at current position
+  const last = pts[pts.length-1];
+  if (last) {
+    const x = 32 + tx(last.t, now, w - 32);
+    const y = hy(last.hz, h);
+    ctx.shadowColor = COLORS.slide;
+    ctx.shadowBlur  = 16;
+    ctx.fillStyle   = '#fff';
+    ctx.beginPath(); ctx.arc(x, y, 5, 0, Math.PI*2); ctx.fill();
+    ctx.shadowBlur  = 0;
+
+    // Note label bubble
+    const note = hzToNote(last.hz);
+    const bw = 44, bh = 20;
+    const bx = Math.min(x + 8, w - bw - 4), by = clamp(y - bh/2, pad, h - pad - bh);
+    ctx.fillStyle = COLORS.slide;
+    ctx.beginPath(); ctx.roundRect(bx, by, bw, bh, 4); ctx.fill();
+    ctx.fillStyle = '#000';
+    ctx.font = 'bold 10px "Space Mono", monospace';
+    ctx.textAlign = 'center';
+    ctx.fillText(note, bx + bw/2, by + 13);
+  }
+}
+
+// ─────────────────────────────────────────────
+//  GRAPH 4 — COMBO
+// ─────────────────────────────────────────────
+function drawCombo(canvas, now) {
+  const ctx = getCtx(canvas);
+  const w = canvas.offsetWidth, h = canvas.offsetHeight;
+
+  // Split: top 55% = Piano Roll style, bottom 45% = F0 trace
+  const splitY = Math.floor(h * 0.55);
+
+  // ── TOP: piano roll mini ──
+  const noteW = 28;
+  ctx.fillStyle = '#0b0f15';
+  ctx.fillRect(0, 0, w, splitY);
+
+  // Key strips + rows
+  const mTop = Math.ceil(MAX_NOTE), mBot = Math.floor(MIN_NOTE);
+  for (let m = mBot; m <= mTop; m++) {
+    const isBlack = [1,3,6,8,10].includes(m % 12);
+    const y1r = (1 - (m - mBot + 0.5) / (mTop - mBot + 1)) * (splitY - 6) + 3;
+    const rh  = (splitY - 6) / (mTop - mBot + 1);
+    ctx.fillStyle = isBlack ? '#0d1318' : '#101820';
+    ctx.fillRect(noteW, y1r - rh/2, w - noteW, rh);
+    ctx.strokeStyle = '#141e28'; ctx.lineWidth = .4;
+    ctx.beginPath(); ctx.moveTo(noteW, y1r - rh/2); ctx.lineTo(w, y1r - rh/2); ctx.stroke();
+
+    ctx.fillStyle = isBlack ? '#1c2830' : '#243040';
+    ctx.fillRect(0, y1r - rh/2, noteW-1, rh);
+
+    if (m % 12 === 0) {
+      ctx.fillStyle = '#4a6070';
+      ctx.font = '7px "Space Mono", monospace';
+      ctx.textAlign = 'center';
+      ctx.fillText('C'+(Math.floor(m/12)-1), noteW/2, y1r + 3);
+    }
+  }
+
+  // Piano roll bars
+  const pts = windowedHistory(now);
+  const mapY_pr = (midi) => {
+    return (1 - (midi - mBot) / (mTop - mBot + 1)) * (splitY - 6) + 3;
+  };
+
+  for (let i = 0; i < pts.length; i++) {
+    const p  = pts[i];
+    const x  = noteW + tx(p.t, now, w - noteW);
+    const m  = hzToMidi(p.hz);
+    const y1 = mapY_pr(m + 0.45);
+    const y2 = mapY_pr(m - 0.45);
+    const bh = Math.abs(y2 - y1);
+    const nextT = i + 1 < pts.length ? pts[i+1].t : p.t + 0.05;
+    const segW  = Math.min((nextT - p.t) / windowSec * (w - noteW), (w - noteW)*0.06);
+    const col   = noteColor(m);
+    ctx.fillStyle = col;
+    ctx.globalAlpha = .8;
+    ctx.beginPath(); ctx.roundRect(x, y1, Math.max(segW, 3), bh, 1.5); ctx.fill();
+    ctx.shadowColor = col; ctx.shadowBlur = 5; ctx.fill();
+    ctx.shadowBlur = 0;
+    ctx.globalAlpha = 1;
+  }
+
+  // divider
+  ctx.fillStyle = '#1e2a38';
+  ctx.fillRect(0, splitY, w, 1);
+  ctx.fillStyle = '#0a0d12';
+  ctx.fillRect(0, splitY + 1, w, h - splitY - 1);
+
+  // ── BOTTOM: sliding curve ──
+  const bpad = 14;
+  const bH   = h - splitY;
+
+  // Zones
+  const bGrad = ctx.createLinearGradient(0, splitY, 0, h);
+  bGrad.addColorStop(0, '#0c1118');
+  bGrad.addColorStop(1, '#070a0e');
+  ctx.fillStyle = bGrad;
+  ctx.fillRect(0, splitY, w, bH);
+
+  ctx.strokeStyle = '#182028'; ctx.lineWidth = .5;
+  for (let i = 1; i <= 2; i++) {
+    const y = splitY + (i / 3) * (bH - bpad);
+    ctx.beginPath(); ctx.moveTo(32, y); ctx.lineTo(w, y); ctx.stroke();
+  }
+
+  // Time axis
+  ctx.font = '8px "Space Mono", monospace';
+  ctx.fillStyle = '#2a3848';
+  ctx.textAlign = 'center';
+  for (let dt = 0; dt <= windowSec; dt += 1) {
+    const x = 32 + (dt / windowSec) * (w - 32);
+    ctx.strokeStyle = '#141e28'; ctx.lineWidth = .8;
+    ctx.beginPath(); ctx.moveTo(x, splitY + 2); ctx.lineTo(x, h - bpad); ctx.stroke();
+    ctx.fillText('-'+(windowSec - dt).toFixed(0)+'s', x, h - 2);
+  }
+
+  // Hz axis labels
+  const hzMarks2 = [100, 200, 400, 800];
+  ctx.textAlign = 'right';
+  ctx.fillStyle = '#2a3848';
+  for (const hz of hzMarks2) {
+    const y = splitY + bpad + (1 - (hz - MIN_HZ) / (MAX_HZ - MIN_HZ)) * (bH - bpad*2);
+    if (y < splitY || y > h - bpad) continue;
+    ctx.beginPath(); ctx.strokeStyle = '#182028'; ctx.lineWidth = .5;
+    ctx.moveTo(32, y); ctx.lineTo(w, y); ctx.stroke();
+    ctx.fillText(hz+'Hz', 30, y + 3);
+  }
+
+  if (!pts.length) return;
+
+  // Filled area
+  const aGrad2 = ctx.createLinearGradient(0, splitY+bpad, 0, h-bpad);
+  aGrad2.addColorStop(0,   'rgba(255,64,129,.3)');
+  aGrad2.addColorStop(1,   'rgba(255,64,129,.02)');
+
+  const mapY_f0 = (hz) => {
+    return splitY + bpad + (1 - (hz - MIN_HZ) / (MAX_HZ - MIN_HZ)) * (bH - bpad*2);
+  };
+
+  ctx.beginPath();
+  let pGap = true, fx = 0, lxArr = [];
+  for (let i = 0; i < pts.length; i++) {
+    const x = 32 + tx(pts[i].t, now, w - 32);
+    const y = mapY_f0(pts[i].hz);
+    const gap = i > 0 && (pts[i].t - pts[i-1].t) > 0.12;
+    if (pGap || gap) {
+      if (!pGap && lxArr.length) {
+        ctx.lineTo(lxArr[lxArr.length-1].x, h - bpad);
+        ctx.lineTo(fx, h - bpad); ctx.closePath();
+        ctx.fillStyle = aGrad2; ctx.fill();
+        ctx.beginPath();
+      }
+      ctx.moveTo(x, y); fx = x; lxArr = [];
+    } else ctx.lineTo(x, y);
+    lxArr.push({x, y}); pGap = gap;
+  }
+  if (lxArr.length > 1) {
+    ctx.lineTo(lxArr[lxArr.length-1].x, h - bpad);
+    ctx.lineTo(fx, h-bpad); ctx.closePath();
+    ctx.fillStyle = aGrad2; ctx.fill();
+  }
+
+  // F0 line
+  ctx.shadowColor = COLORS.ref;
+  ctx.shadowBlur  = 10;
+  ctx.strokeStyle = COLORS.ref;
+  ctx.lineWidth   = 2.5;
+  ctx.lineJoin    = 'round';
+  ctx.beginPath();
+  pGap = true;
+  for (let i = 0; i < pts.length; i++) {
+    const x = 32 + tx(pts[i].t, now, w - 32);
+    const y = mapY_f0(pts[i].hz);
+    const gap = i > 0 && (pts[i].t - pts[i-1].t) > 0.12;
+    if (pGap || gap) ctx.moveTo(x, y);
+    else             ctx.lineTo(x, y);
+    pGap = gap;
+  }
+  ctx.stroke();
+  ctx.shadowBlur = 0;
+
+  // Current dot
+  const last = pts[pts.length - 1];
+  if (last) {
+    const x = 32 + tx(last.t, now, w - 32);
+    const y = mapY_f0(last.hz);
+    ctx.shadowColor = COLORS.ref; ctx.shadowBlur = 14;
+    ctx.fillStyle = '#fff';
+    ctx.beginPath(); ctx.arc(x, y, 4, 0, Math.PI*2); ctx.fill();
+    ctx.shadowBlur = 0;
+
+    // Label in top area (piano roll) — last note
+    const note = hzToNote(last.hz);
+    const lx = noteW + tx(last.t, now, w - noteW);
+    ctx.fillStyle = '#ffffffcc';
+    ctx.font = 'bold 9px "Space Mono", monospace';
+    ctx.textAlign = 'left';
+    ctx.fillText(note, Math.min(lx + 4, w - 28), 14);
+  }
+}
+
+// ─────────────────────────────────────────────
+//  IDLE ANIMATION (demo when mic is off)
+// ─────────────────────────────────────────────
+let idleAnim;
+function startIdle() {
+  let t = 0;
+  function tick() {
+    idleAnim = requestAnimationFrame(tick);
+    t += 0.04;
+    const canvas = canvases[activeTab];
+    const now = t;
+
+    // Generate a fake sinusoidal pitch for demo
+    const demoHz = 200 + 80 * Math.sin(t * 1.1) + 40 * Math.sin(t * 2.3) + 20 * Math.sin(t * 4.7);
+    history.push({ t, hz: demoHz });
+    if (history.length > 300) history.shift();
+
+    drawActive(now);
+  }
+  tick();
+}
+function stopIdle() { cancelAnimationFrame(idleAnim); history = []; }
+
+// ─────────────────────────────────────────────
+//  UI EVENTS
+// ─────────────────────────────────────────────
+document.getElementById('btn-mic').addEventListener('click', () => {
+  if (running) {
+    stopMic();
+    stopIdle();
+    startIdle();
+  } else {
+    stopIdle();
+    startMic();
+  }
+});
+
+document.querySelectorAll('.tab').forEach(tab => {
+  tab.addEventListener('click', () => {
+    document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+    tab.classList.add('active');
+    activeTab = tab.dataset.tab;
+    Object.values(canvases).forEach(c => c.classList.remove('active'));
+    canvases[activeTab].classList.add('active');
+  });
+});
+
+const rangeW = document.getElementById('range-window');
+rangeW.addEventListener('input', () => {
+  windowSec = +rangeW.value;
+  document.getElementById('val-window').textContent = rangeW.value;
+});
+
+function showToast(msg, duration = 2500) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  setTimeout(() => t.classList.remove('show'), duration);
+}
+
+// ─────────────────────────────────────────────
+//  BOOT
+// ─────────────────────────────────────────────
+resizeAll();
+startIdle();
+showToast('Demo activa — toca el mic para usar tu voz', 3000);
+</script>
+</body>
+</html>
